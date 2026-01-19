@@ -1,0 +1,242 @@
+services:
+  # PostgreSQL Master
+  postgres-master:
+    build:
+      context: .
+      dockerfile: postgres-master.Dockerfile
+    container_name: postgres-master
+    restart: "no"
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=3"
+      - "-c"
+      - "max_replication_slots=3"
+      - "-c"
+      - "hot_standby=on"
+    volumes:
+      - postgres-master-data:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d mydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # PostgreSQL Replica
+  postgres-replica:
+    build:
+      context: .
+      dockerfile: postgres-replica.Dockerfile
+    container_name: postgres-replica
+    restart: "no"
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      POSTGRES_MASTER_HOST: postgres-master
+      PGDATA: /var/lib/postgresql/data
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        /replica-init.sh
+        exec docker-entrypoint.sh postgres
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+
+  # Redis 1
+  redis-1:
+    image: redis:8.0
+    container_name: redis-1
+    restart: "no"
+    ports:
+      - "6379:6379"
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PASSWORD}"
+      - "--appendonly"
+      - "yes"
+    volumes:
+      - redis-1-data:/data
+
+  # Redis 2
+  redis-2:
+    image: redis:8.0
+    container_name: redis-2
+    restart: "no"
+    ports:
+      - "6380:6379"
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PASSWORD}"
+      - "--appendonly"
+      - "yes"
+    volumes:
+      - redis-2-data:/data
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
+    restart: "no"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  # VerneMQ 1
+  vernemq-1:
+    image: vernemq/vernemq:2.1.1
+    container_name: vernemq-1
+    restart: "no"
+    ports:
+      - "1883:1883"
+      - "8888:8080"
+    environment:
+      DOCKER_VERNEMQ_ACCEPT_EULA: ${DOCKER_VERNEMQ_ACCEPT_EULA}
+      DOCKER_VERNEMQ_ALLOW_ANONYMOUS: ${DOCKER_VERNEMQ_ALLOW_ANONYMOUS}
+      DOCKER_VERNEMQ_USER_admin: ${DOCKER_VERNEMQ_USER_admin}
+    volumes:
+      - vernemq-1-data:/vernemq/data
+
+  # VerneMQ 2
+  vernemq-2:
+    image: vernemq/vernemq:2.1.1
+    container_name: vernemq-2
+    restart: "no"
+    ports:
+      - "1884:1883"
+      - "8889:8080"
+    environment:
+      DOCKER_VERNEMQ_ACCEPT_EULA: ${DOCKER_VERNEMQ_ACCEPT_EULA}
+      DOCKER_VERNEMQ_ALLOW_ANONYMOUS: ${DOCKER_VERNEMQ_ALLOW_ANONYMOUS}
+      DOCKER_VERNEMQ_USER_admin: ${DOCKER_VERNEMQ_USER_admin}
+    volumes:
+      - vernemq-2-data:/vernemq/data
+
+  # Typesense 1
+  typesense-1:
+    image: typesense/typesense:29.0
+    container_name: typesense-1
+    restart: "no"
+    ports:
+      - "8108:8108"
+    environment:
+      TYPESENSE_DATA_DIR: ${TYPESENSE_DATA_DIR}
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_ENABLE_CORS: ${TYPESENSE_ENABLE_CORS}
+    volumes:
+      - typesense-1-data:/data
+
+  # Typesense 2
+  typesense-2:
+    image: typesense/typesense:29.0
+    container_name: typesense-2
+    restart: "no"
+    ports:
+      - "8109:8108"
+    environment:
+      TYPESENSE_DATA_DIR: ${TYPESENSE_DATA_DIR}
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_ENABLE_CORS: ${TYPESENSE_ENABLE_CORS}
+    volumes:
+      - typesense-2-data:/data
+
+  # Meilisearch
+  meilisearch:
+    image: getmeili/meilisearch:v1.31
+    container_name: meilisearch
+    restart: "no"
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_ENV: ${MEILI_ENV}
+      MEILI_HTTP_ADDR: ${MEILI_HTTP_ADDR}
+      MEILI_DB_PATH: ${MEILI_DB_PATH}
+    volumes:
+      - meilisearch-data:/meili_data
+
+  # MSSQL Primary
+  mssql-primary:
+    build:
+      context: .
+      dockerfile: mssql-primary.Dockerfile
+    container_name: mssql-primary
+    restart: "no"
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: ${MSSQL_ACCEPT_EULA}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID}
+    volumes:
+      - mssql-primary-data:/var/opt/mssql
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # MSSQL Replica
+  mssql-replica:
+    build:
+      context: .
+      dockerfile: mssql-replica.Dockerfile
+    container_name: mssql-replica
+    restart: "no"
+    ports:
+      - "1434:1433"
+    environment:
+      ACCEPT_EULA: ${MSSQL_ACCEPT_EULA}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID}
+      MSSQL_PRIMARY_HOST: mssql-primary
+    volumes:
+      - mssql-replica-data:/var/opt/mssql
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mssql-primary:
+        condition: service_healthy
+
+volumes:
+  postgres-master-data:
+  postgres-replica-data:
+  redis-1-data:
+  redis-2-data:
+  rabbitmq-data:
+  vernemq-1-data:
+  vernemq-2-data:
+  typesense-1-data:
+  typesense-2-data:
+  meilisearch-data:
+  mssql-primary-data:
+  mssql-replica-data:
