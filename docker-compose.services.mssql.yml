@@ -1,0 +1,46 @@
+services:
+  mssql-primary:
+    build:
+      context: .
+      dockerfile: mssql-primary.Dockerfile
+    container_name: mssql-primary
+    restart: "unless-stopped"
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: ${MSSQL_ACCEPT_EULA}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID}
+    volumes:
+      - mssql-primary-data:/var/opt/mssql
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -C -Q ''SELECT 1'' || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  mssql-replica:
+    build:
+      context: .
+      dockerfile: mssql-replica.Dockerfile
+    container_name: mssql-replica
+    restart: "unless-stopped"
+    ports:
+      - "1434:1433"
+    environment:
+      ACCEPT_EULA: ${MSSQL_ACCEPT_EULA}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID}
+      MSSQL_PRIMARY_HOST: mssql-primary
+    volumes:
+      - mssql-replica-data:/var/opt/mssql
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mssql-primary:
+        condition: service_healthy
